@@ -1,0 +1,109 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows (Electron)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Generar ejecutable (.exe)
+        run: npm run dist:win
+
+      - name: Subir artefacto de Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: salto-estelar-windows
+          path: dist-electron/*.exe
+          if-no-files-found: error
+
+  android:
+    name: Android (Capacitor)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Generar proyecto Android nativo
+        run: npx cap add android
+
+      - name: Sincronizar web -> Android
+        run: npx cap sync android
+
+      - name: Forzar orientación horizontal
+        shell: bash
+        run: |
+          set -euo pipefail
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          test -f "$MANIFEST"
+
+          python3 - "$MANIFEST" <<'PY'
+          import re
+          import sys
+
+          path = sys.argv[1]
+          with open(path, "r", encoding="utf-8") as f:
+              xml = f.read()
+
+          def set_landscape(match: "re.Match[str]") -> str:
+              tag = match.group(0)
+              if "android:screenOrientation" in tag:
+                  return re.sub(r'android:screenOrientation="[^"]*"', 'android:screenOrientation="landscape"', tag)
+              return tag[:-1] + ' android:screenOrientation="landscape">'
+
+          pattern = re.compile(r'<activity\b[^>]*android:name="\.MainActivity"[^>]*>')
+          xml, count = pattern.subn(set_landscape, xml)
+          if count == 0:
+              raise SystemExit("No se encontró la actividad principal en el manifest")
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(xml)
+          PY
+
+          grep -q 'android:screenOrientation="landscape"' "$MANIFEST"
+
+      - name: Aceptar licencias del SDK de Android
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null || true
+
+      - name: Permisos de ejecución de Gradle
+        run: chmod +x android/gradlew
+
+      - name: Generar APK (debug)
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Subir artefacto de Android
+        uses: actions/upload-artifact@v4
+        with:
+          name: salto-estelar-android
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

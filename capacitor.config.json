@@ -1,0 +1,14 @@
+{
+  "appId": "com.saltoestelar.app",
+  "appName": "Salto Estelar",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "backgroundColor": "#0b0820",
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
